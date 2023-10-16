@@ -16,6 +16,7 @@ CFLAGS = $(if $(DEBUG),-O0 -g, -O2) -std=c++17 -fno-exceptions -fno-rtti \
 	-Wno-padded \
 	-Wno-newline-eof \
 	-Wno-missing-prototypes \
+	-Wno-reserved-id-macro \
 #	-Wno-signed-enum-bitfield \
 	-Wno-deprecated-register \
 	-Wno-nested-anon-types \
@@ -29,8 +30,8 @@ CFLAGS = $(if $(DEBUG),-O0 -g, -O2) -std=c++17 -fno-exceptions -fno-rtti \
 	-Wno-exit-time-destructors \
 	-Wno-error=padded
 
-LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
-INCLUDES = -I./vendor/glm
+LDFLAGS = -lglfw -lGL -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
+INCLUDES = -I./vendor/glm -I./vendor/glad/include
 
 
 SRCS := main.cpp
@@ -41,8 +42,12 @@ $(OBJS): $(OBJ_ROOT)/%.$(OBJ_EXTENSION): $(SRC_ROOT)/%.cpp
 	mkdir -p $(OBJ_ROOT)
 	$(CXX) $(CFLAGS) -c $< -o $@ $(INCLUDES)
 
+$(OBJ_ROOT)/vendor/glad/gl.$(OBJ_EXTENSION): vendor/glad/src/gl.c
+	mkdir -p $(OBJ_ROOT)/vendor/glad
+	$(CXX) $(CFLAGS) -c $< -o $@ $(INCLUDES) -Wno-everything
+
 # -- .o from build dir -> executable in build dir
-$(BUILD_DIR)/$(EXE_NAME): $(OBJS)
+$(BUILD_DIR)/$(EXE_NAME): $(OBJS) $(OBJ_ROOT)/vendor/glad/gl.$(OBJ_EXTENSION)
 	$(CXX) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # vendor lib :: glm
