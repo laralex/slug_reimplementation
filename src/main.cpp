@@ -15,52 +15,43 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-
- 
 #include <stdlib.h>
 #include <iostream>
  
 struct VertexData
 {
     float x, y;
-    float r, g, b;
+    float u, v;
 };
 
-static const VertexData vertices[3] =
-{
-    { -0.6f, -0.4f, 1.f, 0.f, 0.f },
-    {  0.6f, -0.4f, 0.f, 1.f, 0.f },
-    {   0.f,  0.6f, 0.f, 0.f, 1.f }
-};
- 
-static const char* vertex_shader_text =
+static const char* vertexShaderText =
 "#version 330\n"
 "uniform mat4 MVP;\n"
-"in vec3 vCol;\n"
 "in vec2 vPos;\n"
-"out vec3 color;\n"
+"in vec2 vUv;\n"
+"out vec2 uv;\n"
 "void main()\n"
 "{\n"
 "    gl_Position = MVP * vec4(vPos, 0.0, 1.0);\n"
-"    color = vCol;\n"
+"    uv = vUv;\n"
 "}\n";
  
-static const char* fragment_shader_text =
+static const char* fragmentShaderText =
 "#version 330\n"
-"in vec3 color;\n"
+"in vec2 uv;\n"
 "out vec4 frag;\n"
 "void main()\n"
 "{\n"
-"    frag = vec4(color, 1.0);\n"
+"    frag = vec4(uv.x, uv.y, 0.0, 1.0);\n"
 "}\n";
  
-static void error_callback(int error, const char* description)
+static void ErrorCallback(int error, const char* description)
 {
     (void)error;
     std::cerr << "Error: " << description << '\n';
 }
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     (void)scancode;
     (void)mods;
@@ -68,53 +59,103 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
  
-static void on_font_parsed(void* args, void* _font_data, int error) {
+static void OnFontParsed(void* args, void* _font_data, int error) {
     if (error) {
 		*(uint8_t*)args = error;
 		std::cout << "Unable to parse font";
         return;
 	}
-	TTFFontParser::FontData* font_data = (TTFFontParser::FontData*)_font_data;
-    printf("Font: %s %s parsed\n", font_data->font_names.begin()->font_family.c_str(), font_data->font_names.begin()->font_style.c_str());
-    printf("Number of glyphs: %d\n", uint32_t(font_data->glyphs.size()));
+	TTFFontParser::FontData* fontData = (TTFFontParser::FontData*)_font_data;
+    printf("Font: %s %s parsed\n", fontData->font_names.begin()->font_family.c_str(), fontData->font_names.begin()->font_style.c_str());
+    printf("Number of glyphs: %d\n", uint32_t(fontData->glyphs.size()));
 
     //step through glyph geometry
     {
-        size_t num_glyphs_to_print = 20;
-        for (const auto& glyph_iterator : font_data->glyphs) {
-            if (num_glyphs_to_print-- <= 0) {
+        size_t numGlyphsToPrint = 30;
+        for (const auto& glyphIterator : fontData->glyphs) {
+            if (numGlyphsToPrint-- <= 0) {
                 break;
             }
-            uint32_t num_curves = 0, num_lines = 0;
-            for (const auto& path_list : glyph_iterator.second.path_list) {
-                for (const auto& geometry : path_list.geometry) {
+            uint32_t numCurves = 0, numLines = 0;
+            for (const auto& pathList : glyphIterator.second.path_list) {
+                for (const auto& geometry : pathList.geometry) {
                     if (geometry.is_curve)
-                        num_curves++;
+                        numCurves++;
                     else
-                        num_lines++;
+                        numLines++;
                 }
             }
-            std::wcout << "glyph " << static_cast<wchar_t>(glyph_iterator.first) << " : n_curves=" << num_curves << " n_lines=" << num_lines << '\n';
+            std::wcout << "glyph " << glyphIterator.first << ' ' << static_cast<wchar_t>(glyphIterator.first) << " : n_curves=" << numCurves << " n_lines=" << numLines << '\n';
         }
     }
 
     *(uint8_t*)args = 1;
 }
 
+struct MeshData {
+    std::vector<VertexData> vertexAttributes;
+    std::vector<uint16_t> faceIndices;
+};
+
+MeshData ConvertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
+    //glyph.num_contours;
+    //glyph.pathList;
+    //glyph.bounding_box[4];
+    
+    float cx = glyph.glyph_center.x;
+    float cy = glyph.glyph_center.y;
+    float left = (glyph.bounding_box[0] - cx) / 400.0f;
+    float bottom = (glyph.bounding_box[1] - cy) / 400.0f;
+    float right = (glyph.bounding_box[2] - cx) / 400.0f;
+    float top = (glyph.bounding_box[3] - cy) / 400.0f;
+
+    MeshData out;
+    
+    size_t vidx = 0;
+    out.vertexAttributes.resize(4);
+    out.vertexAttributes[vidx] = {right, top, 1.0f, 1.0f }; ++vidx;
+    out.vertexAttributes[vidx] = {left, top, 0.0f, 1.0f }; ++vidx;
+    out.vertexAttributes[vidx] = {left, bottom, 0.0f, 0.0f}; ++vidx;
+    out.vertexAttributes[vidx] = {right, bottom, 1.0f, 0.0f}; ++vidx;
+
+    for(size_t i = 0; i < vidx; ++i) {
+        std::cout << "x: " << out.vertexAttributes[i].x << " y: " << out.vertexAttributes[i].y << '\n';
+    }
+    size_t fidx = 0;
+    out.faceIndices.resize(2 * 3);
+    out.faceIndices[3*fidx] = 0;
+    out.faceIndices[3*fidx + 1] = 1;
+    out.faceIndices[3*fidx + 2] = 2;
+    ++fidx;
+    out.faceIndices[3*fidx] = 0;
+    out.faceIndices[3*fidx + 1] = 2;
+    out.faceIndices[3*fidx + 2] = 3;
+    ++fidx;
+    for(size_t i = 0; i < fidx; ++i) {
+        std::cout << out.faceIndices[3*i] << ' ' << out.faceIndices[3*i + 1] << ' ' << out.faceIndices[3*i + 2] << '\n';
+    }
+
+    return out;
+}
 int main(void)
 {
-	TTFFontParser::FontData font_data;
+	TTFFontParser::FontData fontData;
     {
         uint8_t condition;
-	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &font_data, on_font_parsed, &condition);
+	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &fontData, OnFontParsed, &condition);
         if (error) {
             exit(EXIT_FAILURE);
         }
+
     }
 
+    uint32_t glyphCode = 321;
+    std::wcout << L"Parsing glyph: " <<(wchar_t)glyphCode << '\n';
+    MeshData glyphMesh = ConvertGlyphToMesh(fontData.glyphs[glyphCode]);
+
     GLFWwindow* window;
-    GLuint vao, vertex_buffer, vertex_shader, fragment_shader, program;
-    GLint mvp_location, vpos_location, vcol_location;
+    GLuint vao, vbo, ebo, vertexShader, fragmentShader, program;
+    GLint mvpLocation, vposLocation, vuvLocation;
     GLint success;
     char infoLog[512];
  
@@ -124,7 +165,7 @@ int main(void)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); 
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
     window = glfwCreateWindow(640, 480, "Simple example", nullptr, nullptr);
     if (!window)
@@ -133,10 +174,10 @@ int main(void)
         exit(EXIT_FAILURE);
     }
  
-    glfwSetKeyCallback(window, key_callback);
+    glfwSetKeyCallback(window, KeyCallback);
  
     glfwMakeContextCurrent(window);
-        glfwSetErrorCallback(error_callback);
+        glfwSetErrorCallback(ErrorCallback);
     int versionGl = gladLoadGL(glfwGetProcAddress);
     std::cout << "Loaded OpenGL " << GLAD_VERSION_MAJOR(versionGl) << '.' << GLAD_VERSION_MINOR(versionGl) << '\n';
  
@@ -159,37 +200,40 @@ int main(void)
     // NOTE: OpenGL error checks have been omitted for brevity
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
-    glGenBuffers(1, &vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glyphMesh.vertexAttributes[0]) * glyphMesh.vertexAttributes.size(), glyphMesh.vertexAttributes.data(), GL_STATIC_DRAW);
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glyphMesh.faceIndices[0]) * glyphMesh.faceIndices.size(), glyphMesh.faceIndices.data(), GL_STATIC_DRAW);
  
-    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_text, nullptr);
-    glCompileShader(vertex_shader);
+    vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderText, nullptr);
+    glCompileShader(vertexShader);
 
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if(!success)
     {
-        glGetShaderInfoLog(vertex_shader, sizeof(infoLog), nullptr, infoLog);
+        glGetShaderInfoLog(vertexShader, sizeof(infoLog), nullptr, infoLog);
         std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
         exit(EXIT_FAILURE);
     }
  
-    fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, &fragment_shader_text, nullptr);
-    glCompileShader(fragment_shader);
+    fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderText, nullptr);
+    glCompileShader(fragmentShader);
 
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
     if(!success)
     {
-        glGetShaderInfoLog(fragment_shader, sizeof(infoLog), nullptr, infoLog);
+        glGetShaderInfoLog(fragmentShader, sizeof(infoLog), nullptr, infoLog);
         std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
         exit(EXIT_FAILURE);
     }
  
     program = glCreateProgram();
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
     glLinkProgram(program);
 
     glGetProgramiv(program, GL_LINK_STATUS, &success);
@@ -200,18 +244,18 @@ int main(void)
         exit(EXIT_FAILURE);
     }
  
-    mvp_location = glGetUniformLocation(program, "MVP");
-    vpos_location = glGetAttribLocation(program, "vPos");
-    vcol_location = glGetAttribLocation(program, "vCol");
+    mvpLocation = glGetUniformLocation(program, "MVP");
+    vposLocation = glGetAttribLocation(program, "vPos");
+    vuvLocation = glGetAttribLocation(program, "vUv");
  
-    GLuint vpos_location_unsigned = static_cast<GLuint>(vpos_location);
-    GLuint vcol_location_unsigned = static_cast<GLuint>(vcol_location);
-    glEnableVertexAttribArray(vpos_location_unsigned);
-    glVertexAttribPointer(vpos_location_unsigned, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(vertices[0]), nullptr);
-    glEnableVertexAttribArray(vcol_location_unsigned);
-    glVertexAttribPointer(vcol_location_unsigned, 3, GL_FLOAT, GL_FALSE,
-                          sizeof(vertices[0]), reinterpret_cast<const void*>(sizeof(float) * 2));
+    GLuint vposLocationUnsigned = static_cast<GLuint>(vposLocation);
+    GLuint vuvLocationUnsigned = static_cast<GLuint>(vuvLocation);
+    glEnableVertexAttribArray(vposLocationUnsigned);
+    glVertexAttribPointer(vposLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
+                          sizeof(VertexData), nullptr);
+    glEnableVertexAttribArray(vuvLocationUnsigned);
+    glVertexAttribPointer(vuvLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
+                          sizeof(VertexData), reinterpret_cast<const void*>(sizeof(float) * 2));
  
     glm::vec4 clear_color (0.45f, 0.55f, 0.60f, 1.00f);
     float rotation_radians;
@@ -255,8 +299,11 @@ int main(void)
         glm::mat4 mvp = p * m;
  
         glUseProgram(program);
-        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, glm::value_ptr(mvp));
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp));
+        // glDrawArrays(GL_TRIANGLES, 0, 3);
+        glFrontFace(GL_CCW);
+        glCullFace(GL_BACK);
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(glyphMesh.faceIndices.size()), GL_UNSIGNED_SHORT, nullptr);
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
