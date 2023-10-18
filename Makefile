@@ -30,7 +30,7 @@ CFLAGS = $(if $(DEBUG),-O0 -g, -O2) -std=c++17 -fno-exceptions -fno-rtti \
 	-Wno-error=padded
 
 LDFLAGS = -lglfw -lGL -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
-INCLUDES = -I./vendor/glm -I./vendor/glad/include -I./vendor/imgui
+INCLUDES = -I./vendor/glm -I./vendor/glad/include -I./vendor/imgui -I./vendor/ttfparser
 
 
 SRCS := main.cpp
@@ -97,7 +97,7 @@ rm:
 
 
 .PHONY: install_linux
-install_linux: vendor/glm
+install_linux: vendor/glm vendor/imgui vendor/ttfparser
 	sudo apt update
 	sudo apt install libglfw3-dev
 	wget https://github.com/ccache/ccache/releases/download/v4.8.3/ccache-4.8.3-linux-x86_64.tar.xz \
@@ -116,6 +116,11 @@ vendor/glm:
 #git submodule add -b tags/0.9.9.8 https://github.com/g-truc/glm.git vendor/glm
 	wget https://github.com/g-truc/glm/releases/download/0.9.9.7/glm-0.9.9.7.zip \
 		-O /tmp/glm.zip && mkdir -p ./vendor && unzip /tmp/glm.zip -d ./vendor/
+
+vendor/ttfparser:
+	mkdir -p ./vendor/ttfparser
+	wget https://github.com/kv01/ttf-parser/blob/065fcd9db7c2d7256b1ae77480a269db1f689d8e/src/ttfParser.h
+		-O ./vendor/ttfparser/ttfparser.h
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

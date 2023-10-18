@@ -3,6 +3,8 @@
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/ext.hpp>
+#define TTF_FONT_PARSER_IMPLEMENTATION 1
+#include <ttfparser.h>
 #pragma clang diagnostic pop
 
 #include <imgui.h>
@@ -12,6 +14,8 @@
 #include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
+
  
 #include <stdlib.h>
 #include <iostream>
@@ -64,8 +68,50 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
  
+static void on_font_parsed(void* args, void* _font_data, int error) {
+    if (error) {
+		*(uint8_t*)args = error;
+		std::cout << "Unable to parse font";
+        return;
+	}
+	TTFFontParser::FontData* font_data = (TTFFontParser::FontData*)_font_data;
+    printf("Font: %s %s parsed\n", font_data->font_names.begin()->font_family.c_str(), font_data->font_names.begin()->font_style.c_str());
+    printf("Number of glyphs: %d\n", uint32_t(font_data->glyphs.size()));
+
+    //step through glyph geometry
+    {
+        size_t num_glyphs_to_print = 20;
+        for (const auto& glyph_iterator : font_data->glyphs) {
+            if (num_glyphs_to_print-- <= 0) {
+                break;
+            }
+            uint32_t num_curves = 0, num_lines = 0;
+            for (const auto& path_list : glyph_iterator.second.path_list) {
+                for (const auto& geometry : path_list.geometry) {
+                    if (geometry.is_curve)
+                        num_curves++;
+                    else
+                        num_lines++;
+                }
+            }
+            std::wcout << "glyph " << static_cast<wchar_t>(glyph_iterator.first) << " : n_curves=" << num_curves << " n_lines=" << num_lines << '\n';
+        }
+    }
+
+    *(uint8_t*)args = 1;
+}
+
 int main(void)
 {
+	TTFFontParser::FontData font_data;
+    {
+        uint8_t condition;
+	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &font_data, on_font_parsed, &condition);
+        if (error) {
+            exit(EXIT_FAILURE);
+        }
+    }
+
     GLFWwindow* window;
     GLuint vao, vertex_buffer, vertex_shader, fragment_shader, program;
     GLint mvp_location, vpos_location, vcol_location;
