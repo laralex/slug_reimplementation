@@ -104,10 +104,10 @@ MeshData ConvertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
     
     float cx = glyph.glyph_center.x;
     float cy = glyph.glyph_center.y;
-    float left = (glyph.bounding_box[0] - cx) / 400.0f;
-    float bottom = (glyph.bounding_box[1] - cy) / 400.0f;
-    float right = (glyph.bounding_box[2] - cx) / 400.0f;
-    float top = (glyph.bounding_box[3] - cy) / 400.0f;
+    float left = (glyph.bounding_box[0] - cx);
+    float bottom = (glyph.bounding_box[1] - cy);
+    float right = (glyph.bounding_box[2] - cx);
+    float top = (glyph.bounding_box[3] - cy);
 
     MeshData out;
     
@@ -257,17 +257,20 @@ int main(void)
     glVertexAttribPointer(vuvLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
                           sizeof(VertexData), reinterpret_cast<const void*>(sizeof(float) * 2));
  
-    glm::vec4 clear_color (0.45f, 0.55f, 0.60f, 1.00f);
-    float rotation_radians;
+    glm::vec4 clear_color (0.0f, 0.0f, 0.0f, 1.00f);
+    static float modelRotationRadians = 0.0f, modelScale = 1.0f;
+    static glm::vec3 modelTranslation = glm::vec3(0.f, 0.f, 500.f);
+    static float frustumWidthHeight[2] = { 10.f, 10.f }, frustumNearFar[2] = {0.001f, 1000.0f};
+    static float fovY = glm::pi<float>() * 0.33f;
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
-        float ratio;
         int width, height;
- 
         glfwGetFramebufferSize(window, &width, &height);
-        ratio = static_cast<float>(width) / static_cast<float>(height);
+
+        float aspectRatio;
+        aspectRatio = static_cast<float>(width) / static_cast<float>(height);
  
         glViewport(0, 0, width, height);
 
@@ -278,13 +281,18 @@ int main(void)
 
         {
             static int counter;
+            static bool isWireframeRendering = false;
             ImGui::Begin("Hello, world!");
-            ImGui::Text("This is some useful text.");
-            ImGui::SliderFloat("rotation", &rotation_radians, 0.0f, 2.f * glm::pi<float>());
+            ImGui::SliderFloat("rotation", &modelRotationRadians, -glm::pi<float>(), glm::pi<float>());
+            ImGui::SliderFloat("scale", &modelScale, 0.0001f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat3("translation", glm::value_ptr(modelTranslation), -1000.0f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("field of view", &fovY, 0.0f, glm::pi<float>());
+            //ImGui::SliderFloat2("frustum width/height", frustumWidthHeight, 0.0f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            frustumNearFar[0] = std::min(frustumNearFar[0], frustumNearFar[1]);
             ImGui::ColorEdit3("clear color", glm::value_ptr(clear_color));
-            if (ImGui::Button("Button"))
-                counter++;
+            ImGui::Checkbox("Wireframe", &isWireframeRendering);
             ImGui::End();
+            glPolygonMode(GL_FRONT_AND_BACK, isWireframeRendering ? GL_LINE : GL_FILL);
         }
 
         glClearColor(clear_color.x * clear_color.w,
@@ -293,11 +301,16 @@ int main(void)
                      clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glm::mat4x4 m(1.0f);
-        m = glm::rotate(m, rotation_radians, glm::vec3(0.f, 0.f, 1.f));
-        glm::mat4 p = glm::ortho(-ratio, ratio, -1.f, 1.f, 1.f, -1.f);
-        glm::mat4 mvp = p * m;
- 
+        glm::mat4x4 с(1.0f);
+        с = glm::rotate(с, modelRotationRadians, glm::vec3(1.f, 0.f, 0.f));
+        с = glm::scale(с, glm::vec3(modelScale));
+        с = glm::translate(с, modelTranslation);
+        с = glm::affineInverse(с);
+        float frustumBoundY = frustumWidthHeight[1] * 0.5f;
+        float frustumBoundX = frustumWidthHeight[0] * 0.5f;
+        glm::mat4 p = glm::perspective(fovY, aspectRatio, frustumNearFar[0], frustumNearFar[1]);
+        //glm::mat4 p = glm::ortho(-aspectRatio, aspectRatio, -1.0f, 1.0f, frustumNearFar[0], frustumNearFar[1]);
+        glm::mat4 mvp = p * с;
         glUseProgram(program);
         glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp));
         // glDrawArrays(GL_TRIANGLES, 0, 3);
