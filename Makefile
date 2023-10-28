@@ -34,7 +34,12 @@ LDFLAGS = -lglfw -lGL -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
 INCLUDES = -I./vendor/glm -I./vendor/glad/include -I./vendor/imgui -I./vendor/ttfparser
 
 
-SRCS := main.cpp shader.cpp util.cpp
+SRCS := \
+	main.cpp \
+	shader.cpp \
+	util.cpp \
+	window.cpp\
+
 OBJS := $(addprefix $(OBJ_ROOT)/, $(SRCS:.cpp=.o))
 SRCS := $(addprefix $(SRC_ROOT)/, $(SRCS))
 # -- .cpp from source dir -> .o object files in build dir

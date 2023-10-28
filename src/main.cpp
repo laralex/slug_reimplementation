@@ -6,16 +6,10 @@
 #define TTF_FONT_PARSER_IMPLEMENTATION 1
 #include <ttfparser.h>
 
-#include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
-
 #include "prelude.hpp"
 #include "util.hpp"
+#include "window.hpp"
 #include "shader.hpp"
-
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
 
 #include <stdlib.h>
 #include <iostream>
@@ -123,72 +117,6 @@ MeshData convertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
     return out;
 }
 
-struct GlfwWindowHandle {
-   GLFWwindow* window;
-    ~GlfwWindowHandle() {
-        if (window != nullptr) {
-            std::cout << "Glfw deleter" << std::endl;
-            glfwDestroyWindow(window);
-            glfwTerminate();
-        }
-   }
-   GlfwWindowHandle(GLFWwindow* window = 0) : window(window) {};
-   GlfwWindowHandle(GlfwWindowHandle&& rhs) : window(rhs.window) { rhs.window = nullptr; };
-   GlfwWindowHandle& operator=(GlfwWindowHandle&& rhs) {
-      window = rhs.window; rhs.window = 0; return *this; }
-};
-
-struct ImguiDeleter {
-   void operator()(void*) const {
-        std::cout << "Imgui deleter" << std::endl;
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
-   }
-};
-using ImguiContext = std::unique_ptr<void, ImguiDeleter>;
-
-auto initGlfw() -> std::variant<GlfwWindowHandle, const char*> {
-    GLFWwindow* window;
-    if (!glfwInit())
-        exit(EXIT_FAILURE);
- 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-    window = glfwCreateWindow(640, 480, "Simple example", nullptr, nullptr);
-    if (!window)
-    {
-        glfwTerminate();
-        return "Failed glfwCreateWindow";
-    }
- 
-    glfwSetKeyCallback(window, keyCallback);
- 
-    glfwMakeContextCurrent(window);
-        glfwSetErrorCallback(errorCallback);
-    glfwSwapInterval(1);
-    return GlfwWindowHandle{window};
-}
-
-auto initImgui(GLFWwindow* window) -> ImguiContext {
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
-    return ImguiContext{(void*)1};
-}
 
 auto makeGlProgram(const char* vertexShaderFilepath, const char* fragmentShaderFilepath) -> GlProgramHandle {
     auto vertexShader = GlShaderHandle{};
@@ -244,6 +172,8 @@ int main(void)
     } else {
         std::cout << unwrapErr(std::move(maybeWindow));
     }
+    glfwSetKeyCallback(window.window, keyCallback);
+    glfwSetErrorCallback(errorCallback);
 
     int versionGl = gladLoadGL(glfwGetProcAddress);
     std::cout << "Loaded OpenGL " << GLAD_VERSION_MAJOR(versionGl) << '.' << GLAD_VERSION_MINOR(versionGl) << '\n';
