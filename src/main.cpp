@@ -5,7 +5,6 @@
 #include <glm/ext.hpp>
 #define TTF_FONT_PARSER_IMPLEMENTATION 1
 #include <ttfparser.h>
-#pragma clang diagnostic pop
 
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
@@ -17,41 +16,41 @@
 
 #include <stdlib.h>
 #include <iostream>
+#include <fstream>
+#include <sstream>
+#include <optional>
+#include <variant>
  
-struct VertexData
-{
+inline constexpr const char* glErrorName(GLenum errorCode) {
+    switch (errorCode) {
+        case GL_INVALID_ENUM:                  return "INVALID_ENUM";
+        case GL_INVALID_VALUE:                 return "INVALID_VALUE";
+        case GL_INVALID_OPERATION:             return "INVALID_OPERATION";
+        case GL_OUT_OF_MEMORY:                 return "OUT_OF_MEMORY";
+        case GL_INVALID_FRAMEBUFFER_OPERATION: return "INVALID_FRAMEBUFFER_OPERATION";
+    }
+}
+
+#if defined(NDEBUG)
+#define GL_CHECK(stmt) stmt;
+#else
+#define GL_CHECK(stmt) stmt; \
+    { GLenum err; \
+    while((err = glGetError()) != GL_NO_ERROR){ \
+        std::cout << "GL_ERROR [" << __FILE__ << ':' << __LINE__ << ':' << __FUNCTION__ << "] " << #stmt << " ! " << glErrorName(err) << '/' << err << '\n';  } }((void)0)
+#endif
+
+struct VertexData {
     float x, y;
     float u, v;
 };
 
-static const char* vertexShaderText =
-"#version 330\n"
-"uniform mat4 MVP;\n"
-"in vec2 vPos;\n"
-"in vec2 vUv;\n"
-"out vec2 uv;\n"
-"void main()\n"
-"{\n"
-"    gl_Position = MVP * vec4(vPos, 0.0, 1.0);\n"
-"    uv = vUv;\n"
-"}\n";
- 
-static const char* fragmentShaderText =
-"#version 330\n"
-"in vec2 uv;\n"
-"out vec4 frag;\n"
-"void main()\n"
-"{\n"
-"    frag = vec4(uv.x, uv.y, 0.0, 1.0);\n"
-"}\n";
- 
-static void ErrorCallback(int error, const char* description)
-{
+static void errorCallback(int error, const char* description) {
     (void)error;
     std::cerr << "Error: " << description << '\n';
 }
 
-static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     (void)scancode;
     (void)mods;
@@ -59,7 +58,7 @@ static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, i
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
  
-static void OnFontParsed(void* args, void* _font_data, int error) {
+static void onFontParsed(void* args, void* _font_data, int error) {
     if (error) {
 		*(uint8_t*)args = error;
 		std::cout << "Unable to parse font";
@@ -97,7 +96,7 @@ struct MeshData {
     std::vector<uint16_t> faceIndices;
 };
 
-MeshData ConvertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
+MeshData convertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
     //glyph.num_contours;
     //glyph.pathList;
     //glyph.bounding_box[4];
@@ -137,12 +136,90 @@ MeshData ConvertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
 
     return out;
 }
+
+auto readTextFile(std::string_view filepath) -> std::optional<std::string>  {
+    std::ifstream textfile;
+    textfile.open(filepath.data());
+    if (textfile.is_open() == false) {
+        return std::nullopt;
+    }
+    std::stringstream ss;
+    ss << textfile.rdbuf();
+    textfile.close();
+    return ss.str();
+}
+
+auto compileGlShader(GLenum shaderType, std::string_view filepath) -> std::variant<GLint, const char*> {
+    static char INFO_LOG_BUFFER[512];
+
+    GL_CHECK(GLint shader = glCreateShader(shaderType));
+    auto shaderCode = readTextFile(filepath);
+    assert(shaderCode.has_value());
+    const char* shaderCodeRaw = shaderCode->c_str();
+    GL_CHECK(glShaderSource(shader, 1, &shaderCodeRaw, nullptr));
+    GL_CHECK(glCompileShader(shader));
+
+    GLint success;
+    GL_CHECK(glGetShaderiv(shader, GL_COMPILE_STATUS, &success));
+    if(success == 0)
+    {
+        GL_CHECK(glGetShaderInfoLog(shader, sizeof(INFO_LOG_BUFFER), nullptr, INFO_LOG_BUFFER));
+        GL_CHECK(glDeleteShader(shader));
+        return INFO_LOG_BUFFER; // NOTE: stored data is only valid until next call to this function
+    }
+    return shader;
+}
+
+auto linkGlProgram(GLint vertexShader, GLint fragmentShader) -> std::variant<GLint, const char*> {
+    static char INFO_LOG_BUFFER[512];
+
+    GLint program = glCreateProgram();
+    GL_CHECK(glAttachShader(program, vertexShader));
+    GL_CHECK(glAttachShader(program, fragmentShader));
+    GL_CHECK(glLinkProgram(program));
+
+    GLint success;
+    GL_CHECK(glGetProgramiv(program, GL_LINK_STATUS, &success));
+    if(success == 0)
+    {
+        GL_CHECK(glGetProgramInfoLog(program, sizeof(INFO_LOG_BUFFER), nullptr, INFO_LOG_BUFFER));
+        GL_CHECK(glDeleteProgram(program));
+        return INFO_LOG_BUFFER; // NOTE: stored data is only valid until next call to this function
+    }
+    return program;
+}
+
+// Rust style error handling
+template<typename T, typename E>
+inline constexpr bool isOk(std::variant<T, E> const& variant) {
+    return std::holds_alternative<T>(variant);
+}
+
+template<typename T, typename E>
+inline constexpr bool isErr(std::variant<T, E> const& variant) {
+    return std::holds_alternative<E>(variant);
+}
+
+template<typename V, typename E>
+inline constexpr V unwrap(std::variant<V,E>&& variant) noexcept {
+    // assert(isOk(variant));
+    return std::get<V>(std::move(variant));
+}
+
+template<typename V, typename E>
+inline constexpr E unwrapErr(std::variant<V,E>&& variant) noexcept {
+    // assert(isErr(variant));
+    return std::get<E>(std::move(variant));
+}
+
+
 int main(void)
 {
+    //std::cout << "DEBUG " << DEBUG << " NDEBUG " << NDEBUG;
 	TTFFontParser::FontData fontData;
     {
         uint8_t condition;
-	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &fontData, OnFontParsed, &condition);
+	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &fontData, onFontParsed, &condition);
         if (error) {
             exit(EXIT_FAILURE);
         }
@@ -151,13 +228,12 @@ int main(void)
 
     uint32_t glyphCode = 321;
     std::wcout << L"Parsing glyph: " <<(wchar_t)glyphCode << '\n';
-    MeshData glyphMesh = ConvertGlyphToMesh(fontData.glyphs[glyphCode]);
+    MeshData glyphMesh = convertGlyphToMesh(fontData.glyphs[glyphCode]);
 
     GLFWwindow* window;
-    GLuint vao, vbo, ebo, vertexShader, fragmentShader, program;
+    GLuint vao, vbo, ebo;
     GLint mvpLocation, vposLocation, vuvLocation;
     GLint success;
-    char infoLog[512];
  
     if (!glfwInit())
         exit(EXIT_FAILURE);
@@ -174,10 +250,10 @@ int main(void)
         exit(EXIT_FAILURE);
     }
  
-    glfwSetKeyCallback(window, KeyCallback);
+    glfwSetKeyCallback(window, keyCallback);
  
     glfwMakeContextCurrent(window);
-        glfwSetErrorCallback(ErrorCallback);
+        glfwSetErrorCallback(errorCallback);
     int versionGl = gladLoadGL(glfwGetProcAddress);
     std::cout << "Loaded OpenGL " << GLAD_VERSION_MAJOR(versionGl) << '.' << GLAD_VERSION_MINOR(versionGl) << '\n';
  
@@ -198,64 +274,56 @@ int main(void)
     ImGui_ImplOpenGL3_Init("#version 330");
  
     // NOTE: OpenGL error checks have been omitted for brevity
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glyphMesh.vertexAttributes[0]) * glyphMesh.vertexAttributes.size(), glyphMesh.vertexAttributes.data(), GL_STATIC_DRAW);
-    glGenBuffers(1, &ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glyphMesh.faceIndices[0]) * glyphMesh.faceIndices.size(), glyphMesh.faceIndices.data(), GL_STATIC_DRAW);
- 
-    vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderText, nullptr);
-    glCompileShader(vertexShader);
+    GL_CHECK(glGenVertexArrays(1, &vao));
+    GL_CHECK(glBindVertexArray(vao));
+    GL_CHECK(glGenBuffers(1, &vbo));
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, sizeof(glyphMesh.vertexAttributes[0]) * glyphMesh.vertexAttributes.size(), glyphMesh.vertexAttributes.data(), GL_STATIC_DRAW));
+    GL_CHECK(glGenBuffers(1, &ebo));
+    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
+    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glyphMesh.faceIndices[0]) * glyphMesh.faceIndices.size(), glyphMesh.faceIndices.data(), GL_STATIC_DRAW));
 
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if(!success)
-    {
-        glGetShaderInfoLog(vertexShader, sizeof(infoLog), nullptr, infoLog);
-        std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+    GLint vertexShader = 0;
+    if (auto maybeShader = compileGlShader(GL_VERTEX_SHADER, "./assets/shaders/shader.vert"); isOk(maybeShader)) {
+        vertexShader = unwrap(std::move(maybeShader));
+    } else {
+        std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << unwrapErr(std::move(maybeShader)) << std::endl;
         exit(EXIT_FAILURE);
     }
- 
-    fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderText, nullptr);
-    glCompileShader(fragmentShader);
 
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if(!success)
-    {
-        glGetShaderInfoLog(fragmentShader, sizeof(infoLog), nullptr, infoLog);
-        std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
+    GLint fragmentShader = 0;
+    if (auto maybeShader = compileGlShader(GL_FRAGMENT_SHADER, "./assets/shaders/shader.frag"); isOk(maybeShader)) {
+        fragmentShader = unwrap(std::move(maybeShader));
+    } else {
+        std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << unwrapErr(std::move(maybeShader)) << std::endl;
         exit(EXIT_FAILURE);
     }
- 
-    program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
 
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if(!success)
-    {
-        glGetProgramInfoLog(program, sizeof(infoLog), nullptr, infoLog);
-        std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    GLint program = 0;
+    if (auto maybeProgram = linkGlProgram(vertexShader, fragmentShader); isOk(maybeProgram)) {
+        program = unwrap(std::move(maybeProgram));
+    } else {
+        std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << unwrapErr(std::move(maybeProgram)) << std::endl;
         exit(EXIT_FAILURE);
     }
- 
-    mvpLocation = glGetUniformLocation(program, "MVP");
-    vposLocation = glGetAttribLocation(program, "vPos");
-    vuvLocation = glGetAttribLocation(program, "vUv");
+
+    GL_CHECK(glDetachShader(program, vertexShader));
+    GL_CHECK(glDetachShader(program, fragmentShader));
+    GL_CHECK(glDeleteShader(vertexShader));
+    GL_CHECK(glDeleteShader(fragmentShader));
+
+    GL_CHECK(mvpLocation = glGetUniformLocation(program, "MVP"));
+    GL_CHECK(vposLocation = glGetAttribLocation(program, "vPos"));
+    GL_CHECK(vuvLocation = glGetAttribLocation(program, "vUv"));
  
     GLuint vposLocationUnsigned = static_cast<GLuint>(vposLocation);
     GLuint vuvLocationUnsigned = static_cast<GLuint>(vuvLocation);
-    glEnableVertexAttribArray(vposLocationUnsigned);
-    glVertexAttribPointer(vposLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(VertexData), nullptr);
-    glEnableVertexAttribArray(vuvLocationUnsigned);
-    glVertexAttribPointer(vuvLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(VertexData), reinterpret_cast<const void*>(sizeof(float) * 2));
+    GL_CHECK(glEnableVertexAttribArray(vposLocationUnsigned));
+    GL_CHECK(glVertexAttribPointer(vposLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
+                          sizeof(VertexData), nullptr));
+    GL_CHECK(glEnableVertexAttribArray(vuvLocationUnsigned));
+    GL_CHECK(glVertexAttribPointer(vuvLocationUnsigned, 2, GL_FLOAT, GL_FALSE,
+                          sizeof(VertexData), reinterpret_cast<const void*>(sizeof(float) * 2)));
  
     glm::vec4 clear_color (0.0f, 0.0f, 0.0f, 1.00f);
     static float modelRotationRadians = 0.0f, modelScale = 1.0f;
@@ -272,7 +340,7 @@ int main(void)
         float aspectRatio;
         aspectRatio = static_cast<float>(width) / static_cast<float>(height);
  
-        glViewport(0, 0, width, height);
+        GL_CHECK(glViewport(0, 0, width, height));
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -295,11 +363,11 @@ int main(void)
             glPolygonMode(GL_FRONT_AND_BACK, isWireframeRendering ? GL_LINE : GL_FILL);
         }
 
-        glClearColor(clear_color.x * clear_color.w,
+        GL_CHECK(glClearColor(clear_color.x * clear_color.w,
                      clear_color.y * clear_color.w,
                      clear_color.z * clear_color.w,
-                     clear_color.w);
-        glClear(GL_COLOR_BUFFER_BIT);
+                     clear_color.w));
+        GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
 
         glm::mat4x4 с(1.0f);
         с = glm::rotate(с, modelRotationRadians, glm::vec3(1.f, 0.f, 0.f));
@@ -311,24 +379,25 @@ int main(void)
         glm::mat4 p = glm::perspective(fovY, aspectRatio, frustumNearFar[0], frustumNearFar[1]);
         //glm::mat4 p = glm::ortho(-aspectRatio, aspectRatio, -1.0f, 1.0f, frustumNearFar[0], frustumNearFar[1]);
         glm::mat4 mvp = p * с;
-        glUseProgram(program);
-        glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp));
+        GL_CHECK(glUseProgram(program));
+        GL_CHECK(glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp)));
         // glDrawArrays(GL_TRIANGLES, 0, 3);
-        glFrontFace(GL_CCW);
-        glCullFace(GL_BACK);
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(glyphMesh.faceIndices.size()), GL_UNSIGNED_SHORT, nullptr);
+        GL_CHECK(glFrontFace(GL_CCW));
+        GL_CHECK(glCullFace(GL_BACK));
+        GL_CHECK(glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(glyphMesh.faceIndices.size()), GL_UNSIGNED_SHORT, nullptr));
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
-        
     }
  
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    GL_CHECK(glDeleteProgram(program));
 
     glfwDestroyWindow(window);
  

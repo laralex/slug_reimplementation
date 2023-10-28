@@ -6,7 +6,7 @@ OBJ_ROOT ?= $(BUILD_DIR)/$(ENGINE_CORE_SRC_ROOT)
 EXE_NAME ?= SlugReimplementation.exe
 
 # NOTE: -Wpadded reports bloating of structs with padding !!
-CFLAGS = $(if $(DEBUG),-O0 -g, -O2) -std=c++17 -fno-exceptions -fno-rtti \
+CFLAGS = $(if $(DEBUG),-O0 -g, -O2 -DNDEBUG) -std=c++17 -fno-exceptions -fno-rtti \
 	-Weverything \
 	-Wno-switch-enum \
 	-Wno-c++98-compat-pedantic \
@@ -80,6 +80,11 @@ ifneq ($(f),) # force rebulid
 .PHONY: $(OBJS)
 endif
 
+INSTALL_SHADERS = shader.frag shader.vert
+$(INSTALL_SHADERS):
+	mkdir -p $(BUILD_DIR)/shaders
+	cp src/shaders/$@ $(BUILD_DIR)/shaders
+
 .PHONY: build
 build: $(BUILD_DIR)
 	$(MAKE) $(BUILD_DIR)/$(EXE_NAME)
@@ -93,6 +98,7 @@ run: build
 rm:
 	rm -f $(BUILD_DIR)/$(subst .,*.,$(EXE_NAME))
 	rm -f $(BUILD_DIR)/**/*.o
+	rm -f $(BUILD_DIR)/shaders/*
 	find $(BUILD_DIR) -name '*.o' -delete
 
 
