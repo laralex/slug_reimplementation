@@ -10,7 +10,10 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 
-#include <glad/gl.h>
+#include "prelude.hpp"
+#include "util.hpp"
+#include "shader.hpp"
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -20,25 +23,7 @@
 #include <sstream>
 #include <optional>
 #include <variant>
- 
-inline constexpr const char* glErrorName(GLenum errorCode) {
-    switch (errorCode) {
-        case GL_INVALID_ENUM:                  return "INVALID_ENUM";
-        case GL_INVALID_VALUE:                 return "INVALID_VALUE";
-        case GL_INVALID_OPERATION:             return "INVALID_OPERATION";
-        case GL_OUT_OF_MEMORY:                 return "OUT_OF_MEMORY";
-        case GL_INVALID_FRAMEBUFFER_OPERATION: return "INVALID_FRAMEBUFFER_OPERATION";
-    }
-}
 
-#if defined(NDEBUG)
-#define GL_CHECK(stmt) stmt;
-#else
-#define GL_CHECK(stmt) stmt; \
-    { GLenum err; \
-    while((err = glGetError()) != GL_NO_ERROR){ \
-        std::cout << "GL_ERROR [" << __FILE__ << ':' << __LINE__ << ':' << __FUNCTION__ << "] " << #stmt << " ! " << glErrorName(err) << '/' << err << '\n';  } }((void)0)
-#endif
 
 struct VertexData {
     float x, y;
@@ -136,82 +121,6 @@ MeshData convertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
 
     return out;
 }
-
-auto readTextFile(std::string_view filepath) -> std::optional<std::string>  {
-    std::ifstream textfile;
-    textfile.open(filepath.data());
-    if (textfile.is_open() == false) {
-        return std::nullopt;
-    }
-    std::stringstream ss;
-    ss << textfile.rdbuf();
-    textfile.close();
-    return ss.str();
-}
-
-auto compileGlShader(GLenum shaderType, std::string_view filepath) -> std::variant<GLint, const char*> {
-    static char INFO_LOG_BUFFER[512];
-
-    GL_CHECK(GLint shader = glCreateShader(shaderType));
-    auto shaderCode = readTextFile(filepath);
-    assert(shaderCode.has_value());
-    const char* shaderCodeRaw = shaderCode->c_str();
-    GL_CHECK(glShaderSource(shader, 1, &shaderCodeRaw, nullptr));
-    GL_CHECK(glCompileShader(shader));
-
-    GLint success;
-    GL_CHECK(glGetShaderiv(shader, GL_COMPILE_STATUS, &success));
-    if(success == 0)
-    {
-        GL_CHECK(glGetShaderInfoLog(shader, sizeof(INFO_LOG_BUFFER), nullptr, INFO_LOG_BUFFER));
-        GL_CHECK(glDeleteShader(shader));
-        return INFO_LOG_BUFFER; // NOTE: stored data is only valid until next call to this function
-    }
-    return shader;
-}
-
-auto linkGlProgram(GLint vertexShader, GLint fragmentShader) -> std::variant<GLint, const char*> {
-    static char INFO_LOG_BUFFER[512];
-
-    GLint program = glCreateProgram();
-    GL_CHECK(glAttachShader(program, vertexShader));
-    GL_CHECK(glAttachShader(program, fragmentShader));
-    GL_CHECK(glLinkProgram(program));
-
-    GLint success;
-    GL_CHECK(glGetProgramiv(program, GL_LINK_STATUS, &success));
-    if(success == 0)
-    {
-        GL_CHECK(glGetProgramInfoLog(program, sizeof(INFO_LOG_BUFFER), nullptr, INFO_LOG_BUFFER));
-        GL_CHECK(glDeleteProgram(program));
-        return INFO_LOG_BUFFER; // NOTE: stored data is only valid until next call to this function
-    }
-    return program;
-}
-
-// Rust style error handling
-template<typename T, typename E>
-inline constexpr bool isOk(std::variant<T, E> const& variant) {
-    return std::holds_alternative<T>(variant);
-}
-
-template<typename T, typename E>
-inline constexpr bool isErr(std::variant<T, E> const& variant) {
-    return std::holds_alternative<E>(variant);
-}
-
-template<typename V, typename E>
-inline constexpr V unwrap(std::variant<V,E>&& variant) noexcept {
-    // assert(isOk(variant));
-    return std::get<V>(std::move(variant));
-}
-
-template<typename V, typename E>
-inline constexpr E unwrapErr(std::variant<V,E>&& variant) noexcept {
-    // assert(isErr(variant));
-    return std::get<E>(std::move(variant));
-}
-
 
 int main(void)
 {
