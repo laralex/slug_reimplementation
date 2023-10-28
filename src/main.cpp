@@ -123,28 +123,33 @@ MeshData convertGlyphToMesh(TTFFontParser::Glyph const& glyph) {
     return out;
 }
 
-int main(void)
-{
-    //std::cout << "DEBUG " << DEBUG << " NDEBUG " << NDEBUG;
-	TTFFontParser::FontData fontData;
-    {
-        uint8_t condition;
-	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &fontData, onFontParsed, &condition);
-        if (error) {
-            exit(EXIT_FAILURE);
+struct GlfwWindowHandle {
+   GLFWwindow* window;
+    ~GlfwWindowHandle() {
+        if (window != nullptr) {
+            std::cout << "Glfw deleter" << std::endl;
+            glfwDestroyWindow(window);
+            glfwTerminate();
         }
+   }
+   GlfwWindowHandle(GLFWwindow* window = 0) : window(window) {};
+   GlfwWindowHandle(GlfwWindowHandle&& rhs) : window(rhs.window) { rhs.window = nullptr; };
+   GlfwWindowHandle& operator=(GlfwWindowHandle&& rhs) {
+      window = rhs.window; rhs.window = 0; return *this; }
+};
 
-    }
+struct ImguiDeleter {
+   void operator()(void*) const {
+        std::cout << "Imgui deleter" << std::endl;
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+   }
+};
+using ImguiContext = std::unique_ptr<void, ImguiDeleter>;
 
-    uint32_t glyphCode = 321;
-    std::wcout << L"Parsing glyph: " <<(wchar_t)glyphCode << '\n';
-    MeshData glyphMesh = convertGlyphToMesh(fontData.glyphs[glyphCode]);
-
+auto initGlfw() -> std::variant<GlfwWindowHandle, const char*> {
     GLFWwindow* window;
-    GLuint vao, vbo, ebo;
-    GLint mvpLocation, vposLocation, vuvLocation;
-    GLint success;
- 
     if (!glfwInit())
         exit(EXIT_FAILURE);
  
@@ -157,22 +162,22 @@ int main(void)
     if (!window)
     {
         glfwTerminate();
-        exit(EXIT_FAILURE);
+        return "Failed glfwCreateWindow";
     }
  
     glfwSetKeyCallback(window, keyCallback);
  
     glfwMakeContextCurrent(window);
         glfwSetErrorCallback(errorCallback);
-    int versionGl = gladLoadGL(glfwGetProcAddress);
-    std::cout << "Loaded OpenGL " << GLAD_VERSION_MAJOR(versionGl) << '.' << GLAD_VERSION_MINOR(versionGl) << '\n';
- 
     glfwSwapInterval(1);
+    return GlfwWindowHandle{window};
+}
 
+auto initImgui(GLFWwindow* window) -> ImguiContext {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -182,17 +187,10 @@ int main(void)
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
- 
-    // NOTE: OpenGL error checks have been omitted for brevity
-    GL_CHECK(glGenVertexArrays(1, &vao));
-    GL_CHECK(glBindVertexArray(vao));
-    GL_CHECK(glGenBuffers(1, &vbo));
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, sizeof(glyphMesh.vertexAttributes[0]) * glyphMesh.vertexAttributes.size(), glyphMesh.vertexAttributes.data(), GL_STATIC_DRAW));
-    GL_CHECK(glGenBuffers(1, &ebo));
-    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
-    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glyphMesh.faceIndices[0]) * glyphMesh.faceIndices.size(), glyphMesh.faceIndices.data(), GL_STATIC_DRAW));
+    return ImguiContext{(void*)1};
+}
 
+auto makeGlProgram(const char* vertexShaderFilepath, const char* fragmentShaderFilepath) -> GlProgramHandle {
     auto vertexShader = GlShaderHandle{};
     if (auto maybeShader = compileGlShader(GL_VERTEX_SHADER, "./assets/shaders/shader.vert"); isOk(maybeShader)) {
         vertexShader = unwrap(std::move(maybeShader));
@@ -216,6 +214,54 @@ int main(void)
         std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << unwrapErr(std::move(maybeProgram)) << std::endl;
         exit(EXIT_FAILURE);
     }
+    return program;
+}
+
+int main(void)
+{
+    //std::cout << "DEBUG " << DEBUG << " NDEBUG " << NDEBUG;
+	TTFFontParser::FontData fontData;
+    {
+        uint8_t condition;
+	    int8_t error = TTFFontParser::parse_file("./assets/fonts/HHSamuel.ttf", &fontData, onFontParsed, &condition);
+        if (error) {
+            exit(EXIT_FAILURE);
+        }
+
+    }
+
+    uint32_t glyphCode = 321;
+    std::wcout << L"Parsing glyph: " <<(wchar_t)glyphCode << '\n';
+    MeshData glyphMesh = convertGlyphToMesh(fontData.glyphs[glyphCode]);
+
+    GLuint vao, vbo, ebo;
+    GLint mvpLocation, vposLocation, vuvLocation;
+    GLint success;
+ 
+    GlfwWindowHandle window;
+    if (auto maybeWindow = initGlfw(); isOk(maybeWindow)) {
+        window = unwrap(std::move(maybeWindow));
+    } else {
+        std::cout << unwrapErr(std::move(maybeWindow));
+    }
+
+    int versionGl = gladLoadGL(glfwGetProcAddress);
+    std::cout << "Loaded OpenGL " << GLAD_VERSION_MAJOR(versionGl) << '.' << GLAD_VERSION_MINOR(versionGl) << '\n';
+
+    auto imguiContext = initImgui(window.window);
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+
+    // NOTE: OpenGL error checks have been omitted for brevity
+    GL_CHECK(glGenVertexArrays(1, &vao));
+    GL_CHECK(glBindVertexArray(vao));
+    GL_CHECK(glGenBuffers(1, &vbo));
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, sizeof(glyphMesh.vertexAttributes[0]) * glyphMesh.vertexAttributes.size(), glyphMesh.vertexAttributes.data(), GL_STATIC_DRAW));
+    GL_CHECK(glGenBuffers(1, &ebo));
+    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
+    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glyphMesh.faceIndices[0]) * glyphMesh.faceIndices.size(), glyphMesh.faceIndices.data(), GL_STATIC_DRAW));
+
+    GlProgramHandle program = makeGlProgram("./assets/shaders/shader.vert", "./asserts/shaders/shader.frag");
 
     GL_CHECK(mvpLocation = glGetUniformLocation(program.handle, "MVP"));
     GL_CHECK(vposLocation = glGetAttribLocation(program.handle, "vPos"));
@@ -235,12 +281,12 @@ int main(void)
     static glm::vec3 modelTranslation = glm::vec3(0.f, 0.f, 500.f);
     static float frustumWidthHeight[2] = { 10.f, 10.f }, frustumNearFar[2] = {0.001f, 1000.0f};
     static float fovY = glm::pi<float>() * 0.33f;
-    while (!glfwWindowShouldClose(window))
+    while (!glfwWindowShouldClose(window.window))
     {
         glfwPollEvents();
 
         int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
+        glfwGetFramebufferSize(window.window, &width, &height);
 
         float aspectRatio;
         aspectRatio = static_cast<float>(width) / static_cast<float>(height);
@@ -294,16 +340,8 @@ int main(void)
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapBuffers(window);
+        glfwSwapBuffers(window.window);
     }
  
-    // Cleanup
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-
-    glfwDestroyWindow(window);
- 
-    glfwTerminate();
     return 0;
 }
