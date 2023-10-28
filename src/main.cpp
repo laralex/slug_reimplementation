@@ -23,6 +23,7 @@
 #include <sstream>
 #include <optional>
 #include <variant>
+#include <memory>
 
 
 struct VertexData {
@@ -192,7 +193,7 @@ int main(void)
     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
     GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glyphMesh.faceIndices[0]) * glyphMesh.faceIndices.size(), glyphMesh.faceIndices.data(), GL_STATIC_DRAW));
 
-    GLint vertexShader = 0;
+    auto vertexShader = GlShaderHandle{};
     if (auto maybeShader = compileGlShader(GL_VERTEX_SHADER, "./assets/shaders/shader.vert"); isOk(maybeShader)) {
         vertexShader = unwrap(std::move(maybeShader));
     } else {
@@ -200,7 +201,7 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
-    GLint fragmentShader = 0;
+    auto fragmentShader = GlShaderHandle{};
     if (auto maybeShader = compileGlShader(GL_FRAGMENT_SHADER, "./assets/shaders/shader.frag"); isOk(maybeShader)) {
         fragmentShader = unwrap(std::move(maybeShader));
     } else {
@@ -208,22 +209,17 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
-    GLint program = 0;
-    if (auto maybeProgram = linkGlProgram(vertexShader, fragmentShader); isOk(maybeProgram)) {
+    auto program = GlProgramHandle{};
+    if (auto maybeProgram = linkGlProgram(std::move(vertexShader), std::move(fragmentShader)); isOk(maybeProgram)) {
         program = unwrap(std::move(maybeProgram));
     } else {
         std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << unwrapErr(std::move(maybeProgram)) << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    GL_CHECK(glDetachShader(program, vertexShader));
-    GL_CHECK(glDetachShader(program, fragmentShader));
-    GL_CHECK(glDeleteShader(vertexShader));
-    GL_CHECK(glDeleteShader(fragmentShader));
-
-    GL_CHECK(mvpLocation = glGetUniformLocation(program, "MVP"));
-    GL_CHECK(vposLocation = glGetAttribLocation(program, "vPos"));
-    GL_CHECK(vuvLocation = glGetAttribLocation(program, "vUv"));
+    GL_CHECK(mvpLocation = glGetUniformLocation(program.handle, "MVP"));
+    GL_CHECK(vposLocation = glGetAttribLocation(program.handle, "vPos"));
+    GL_CHECK(vuvLocation = glGetAttribLocation(program.handle, "vUv"));
  
     GLuint vposLocationUnsigned = static_cast<GLuint>(vposLocation);
     GLuint vuvLocationUnsigned = static_cast<GLuint>(vuvLocation);
@@ -288,7 +284,7 @@ int main(void)
         glm::mat4 p = glm::perspective(fovY, aspectRatio, frustumNearFar[0], frustumNearFar[1]);
         //glm::mat4 p = glm::ortho(-aspectRatio, aspectRatio, -1.0f, 1.0f, frustumNearFar[0], frustumNearFar[1]);
         glm::mat4 mvp = p * с;
-        GL_CHECK(glUseProgram(program));
+        GL_CHECK(glUseProgram(program.handle));
         GL_CHECK(glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp)));
         // glDrawArrays(GL_TRIANGLES, 0, 3);
         GL_CHECK(glFrontFace(GL_CCW));
@@ -305,8 +301,6 @@ int main(void)
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-
-    GL_CHECK(glDeleteProgram(program));
 
     glfwDestroyWindow(window);
  

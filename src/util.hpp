@@ -16,13 +16,13 @@ inline constexpr bool isErr(std::variant<T, E> const& variant) {
 }
 
 template<typename V, typename E>
-inline constexpr V unwrap(std::variant<V,E>&& variant) noexcept {
+inline constexpr V&& unwrap(std::variant<V,E>&& variant) noexcept {
     // assert(isOk(variant));
     return std::get<V>(std::move(variant));
 }
 
 template<typename V, typename E>
-inline constexpr E unwrapErr(std::variant<V,E>&& variant) noexcept {
+inline constexpr E&& unwrapErr(std::variant<V,E>&& variant) noexcept {
     // assert(isErr(variant));
     return std::get<E>(std::move(variant));
 }

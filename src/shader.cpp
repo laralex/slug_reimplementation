@@ -1,7 +1,7 @@
 #include "shader.hpp"
 #include "util.hpp"
 
-auto compileGlShader(GLenum shaderType, std::string_view filepath) -> std::variant<GLint, const char*> {
+auto compileGlShader(GLenum shaderType, std::string_view filepath) -> std::variant<GlShaderHandle, const char*> {
     static char INFO_LOG_BUFFER[512];
 
     GL_CHECK(GLint shader = glCreateShader(shaderType));
@@ -19,16 +19,18 @@ auto compileGlShader(GLenum shaderType, std::string_view filepath) -> std::varia
         GL_CHECK(glDeleteShader(shader));
         return INFO_LOG_BUFFER; // NOTE: stored data is only valid until next call to this function
     }
-    return shader;
+    return GlShaderHandle{ shader };
 }
 
-auto linkGlProgram(GLint vertexShader, GLint fragmentShader) -> std::variant<GLint, const char*> {
+auto linkGlProgram(GlShaderHandle&& vertexShader, GlShaderHandle&& fragmentShader) -> std::variant<GlProgramHandle, const char*> {
     static char INFO_LOG_BUFFER[512];
 
     GLint program = glCreateProgram();
-    GL_CHECK(glAttachShader(program, vertexShader));
-    GL_CHECK(glAttachShader(program, fragmentShader));
+    GL_CHECK(glAttachShader(program, vertexShader.handle));
+    GL_CHECK(glAttachShader(program, fragmentShader.handle));
     GL_CHECK(glLinkProgram(program));
+    GL_CHECK(glDetachShader(program, vertexShader.handle));
+    GL_CHECK(glDetachShader(program, fragmentShader.handle));
 
     GLint success;
     GL_CHECK(glGetProgramiv(program, GL_LINK_STATUS, &success));
@@ -38,5 +40,5 @@ auto linkGlProgram(GLint vertexShader, GLint fragmentShader) -> std::variant<GLi
         GL_CHECK(glDeleteProgram(program));
         return INFO_LOG_BUFFER; // NOTE: stored data is only valid until next call to this function
     }
-    return program;
+    return GlProgramHandle{program};
 }

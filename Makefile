@@ -7,6 +7,7 @@ EXE_NAME ?= SlugReimplementation.exe
 
 # NOTE: -Wpadded reports bloating of structs with padding !!
 CFLAGS = $(if $(DEBUG),-O0 -g, -O2 -DNDEBUG) -std=c++17 -fno-exceptions -fno-rtti \
+	-Werror=return-type \
 	-Weverything \
 	-Wno-switch-enum \
 	-Wno-c++98-compat-pedantic \

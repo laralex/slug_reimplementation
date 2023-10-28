@@ -11,6 +11,7 @@ inline constexpr const char* glErrorName(GLenum errorCode) {
         case GL_OUT_OF_MEMORY:                 return "OUT_OF_MEMORY";
         case GL_INVALID_FRAMEBUFFER_OPERATION: return "INVALID_FRAMEBUFFER_OPERATION";
     }
+    return "UNKNOWN_CODE";
 }
 
 #if defined(NDEBUG)
